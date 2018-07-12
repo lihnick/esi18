@@ -1,4 +1,4 @@
-package esi18.simple; 
+package esi18; 
 import battleship.core.*;
 import java.util.List;
 
