@@ -35,25 +35,27 @@ public class GunDroneShip extends Ship {
             Coord location = this.getCoord();
             this.move(arena, Direction.WEST);
 
-            // Get a list of enemy ships
-            List<Ship> targets = this.getNearbyShips(arena);
+            // Get a list of nearby ships
+            List<Ship> nearby = this.getNearbyShips(arena);
             // Get the number of shots left on this ship
             int numShots = this.getRemainingShots();
 
-            while (targets.size() > 0 && numShots > 0) {
-                Ship enemy = targets.get(0);
-
-                while(enemy.getHealth() > 0 && numShots > 0) {
-                    Coord enemyLoc = enemy.getCoord();
-                    int x = enemyLoc.getX();
-                    int y = enemyLoc.getY();
-                    this.fire(arena, x, y);
-                    numShots = this.getRemainingShots();
+            for (int i = 0; i < nearby.size(); i++) {
+                if ( this.isSameTeamAs(nearby.get(i)) ) {
+                // if same team, don't shoot
+                } else {
+                    Ship enemy = nearby.get(i);
+                    while(enemy.getHealth() > 0 && numShots > 0) {
+                        Coord enemyLoc = enemy.getCoord();
+                        int x = enemyLoc.getX();
+                        int y = enemyLoc.getY();
+                        this.fire(arena, x, y);
+                        numShots = this.getRemainingShots();
+                    }
+                    // if we get here, that means a ship has been sunk
+                    // call this function again to update the list to not shoot at a sunk ship
+                    nearby = this.getNearbyShips(arena);
                 }
-
-                // if we get here, that means a ship has been sunk
-                // call this function again to update the list to not shoot at a sunk ship
-                targets = this.getNearbyShips(arena);
             }
         }
     }

@@ -27,14 +27,20 @@ public class HullDroneShip extends Ship {
         Coord location = this.getCoord();
         this.move(arena, Direction.WEST);
 
-        List<Ship> targets = this.getNearbyShips(arena);
+        List<Ship> nearby = this.getNearbyShips(arena);
 
-        if (targets.size() > 0) {
-            Ship enemy = targets.get(0);
-            Coord enemyLoc = enemy.getCoord();
-            int x = enemyLoc.getX();
-            int y = enemyLoc.getY();
-            this.fire(arena, x, y);
+        // loop through the list of nearby ships
+        for (int i = 0; i < nearby.size(); i++) {
+            if ( this.isSameTeamAs(nearby.get(i)) ) {
+                // if same team, don't shoot
+            }
+            else {
+                Ship enemy = nearby.get(i);
+                Coord enemyLoc = enemy.getCoord();
+                int x = enemyLoc.getX();
+                int y = enemyLoc.getY();
+                this.fire(arena, x, y);
+            }
         }
     }
     
