@@ -12,7 +12,7 @@ public class HullDroneShip extends Ship {
         this.initializeName("Health Drone");
         this.initializeOwner("TA");
         this.initializeHull(5);
-        this.initializeFirepower(1);
+        this.initializeFirepower(2);
         this.initializeSpeed(1);
         this.initializeRange(1);
     }
@@ -39,6 +39,7 @@ public class HullDroneShip extends Ship {
                 Coord enemyLoc = enemy.getCoord();
                 int x = enemyLoc.getX();
                 int y = enemyLoc.getY();
+                this.fire(arena, x, y);
                 this.fire(arena, x, y);
             }
         }

@@ -13,7 +13,7 @@ public class GunDroneShip extends Ship {
     public GunDroneShip() {
         this.initializeName("Gun Drone");
         this.initializeOwner("TA");
-        this.initializeHull(1);
+        this.initializeHull(2);
         this.initializeFirepower(4);
         this.initializeSpeed(1);
         this.initializeRange(2);
