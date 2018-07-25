@@ -95,12 +95,17 @@ public class Hl extends Ship {
         return result;
     }
 
-    private LinkedHashMap<Ship, int[][]> filterNearby(LinkedHashMap<Ship, int[][]> data) {
+    private LinkedHashMap<Ship, int[][]> filterNearby(LinkedHashMap<Ship, int[][]> data, boolean needMove) {
         LinkedHashMap<Ship, int[][]> result = new LinkedHashMap<>();
+        int movement = 0;
+        if (needMove) {
+            // get remaining move is used to allow this method to be called multiple times in one turn
+            movement = this.getRemainingMoves();
+        }
 
         result = data.entrySet().stream().filter((ship) -> {
-            if (Math.abs(this.getX() - ship.getX()) <= this.getRange() && 
-                Math.abs(this.getY() - ship.getY()) <= this.getRange() ) {
+            if (Math.abs(this.getX() - ship.getX()) - movement <= this.getRange() && 
+                Math.abs(this.getY() - ship.getY()) - movement <= this.getRange() ) {
                 return true;
             }
             return false;
@@ -139,7 +144,7 @@ public class Hl extends Ship {
         return result;
     }
 
-    private LinkedHashMap<Ship, int[][]> filterPriority(Arena arena) {
+    private LinkedHashMap<Ship, int[][]> sortPriority(LinkedHashMap<Ship, int[][]> data) {
         LinkedHashMap<Ship, int[][]> result = new LinkedHashMap<>();
 
         result = data.entrySet().stream().sorted((lhs, rhs) -> {
@@ -166,17 +171,70 @@ public class Hl extends Ship {
         return result;
     }
 
-    private int[][] composeMap(Arena arena) {
-
+    private int[][] composeMap(Arena arena, LinkedHashMap<Ship, int[][]> data) {
+        int[][] heatmap = new int[arena.getXSize()][arena.getYSize()];
+        
+        for (Map.Entry<Ship, int[][]> entry : data.entrySet()) {
+            for (int x = 0; x < arena.getXSize(); x++) {
+                for (int y = 0; y < arena.getYSize(); y++) {
+                    heatmap[x][y] += entry.getValue()[x][y];
+                }
+            }
+        }
+        return heatmap;
     }
 
-    private List<Direction> composeMove(Arena arena, LinkedHashMap<Ship, int[][]> data) {
-
+    // function only works for ship speed of 1
+    private Direction deriveMovement(Coord start, Coord goal) {
+        Direction result;
+        if (start.getX() < goal.getX()) {
+            result = Direction.EAST;
+        }
+        if (start.getX() > goal.getX()) {
+            result = Direction.WEST;
+        }
+        if (start.getY() > goal.getY()) {
+            result = Direction.SOUTH;
+        }
+        if (start.getY() < goal.getY()) {
+            result = Direction.NORTH;
+        }
     }
 
-    private List<Coord> composeShots(Arena arena, LinkedHashMap<Ship, int[][]> data) {
-
+    private Coord offsetCoord(Coord start, Direction dir) {
+        Coord result;
+        if (dir == Direction.NORTH) {
+            result = new Coord(start.getX(), start.getY()-1);
+        }
+        else if (dir == Direction.SOUTH) {
+            result = new Coord(start.getX(), start.getY()+1);
+        }
+        else if (dir == Direction.WEST) {
+            result = new Coord(start.getX()-1, start.getY());
+        }
+        else if (dir == Direction.EAST) {
+            result = new Coord(start.getX()+1, start.getY());
+        }
+        else {
+            result = start;
+        }
+        return result;
     }
+
+    /* Offense Cases: (no nearby, nearby within movement, sinkables)
+        * no nearby ships within own movement
+            * Move closer (can be risky)
+        * nearby ships within own movement
+            * for sinkable ships
+                if (low threat)
+                    * move closer / attack
+                else
+                    * move closer to team if low hp / stay put
+        
+        Defense Cases: (non sinkeable nearby ships)
+            * fire using priority filter
+            * move closer to team
+    */
 
     /*
      * Determines what actions the ship will take on a given turn
@@ -185,11 +243,89 @@ public class Hl extends Ship {
      */
     @Override
     protected void doTurn(Arena arena) {
-        this.move(arena, Direction.EAST);
-        Coord location = this.getCoord();
-        int x = location.getX();
-        int y = location.getY();
-        this.fire(arena, x+1, y);
+        LinkedHashMap<Ship, int[][]> data = updateThreat(arena);
+        LinkedHashMap<Ship, int[][]> nearby = filterNearby(data, true);
+        LinkedHashMap<Ship, int[][]> moveNearby = filterNearby(data, false);
+
+        LinkedHashMap<Ship, int[][]> nearbyEnemy = filterFriendly(nearby, true);
+        LinkedHashMap<Ship, int[][]> moveNearbyEnemy = filterFriendly(moveNearby, true);
+
+        // on offense if there are no nearby enemy that are shootable without movement
+        boolean offense = nearbyEnemy.size() == 0;
+
+        if (offense) {
+            if (moveNearbyEnemy.size() == 0) {
+                // move closer, need a easy wait to find a direction
+                // This step will take a bit of a risk
+                LinkedHashMap<Ship, int[][]> search = filterFriendly(data, true);
+                LinkedHashMap<Ship, int[][]> priority = sortPriority(search);
+
+                Ship first = priority.firstEntry().getKey();
+                Direction moveDir = deriveMovement(this.getCoord(), first.getCoord());
+                this.move(arena, moveDir);
+
+                List<Ship> nearby = this.getNearbyShips(arena);
+                for (Ship s : nearby) {
+                    if (!this.isSameTeamAs(s)) {
+                        Coord loc = s.getCoord();
+                        this.fire(arena, loc.getX(), loc.getY());
+                    }
+                }
+
+            } else {
+                // find sinkables within movement
+                LinkedHashMap<Ship, int[][]> priority = sortPriority(moveNearbyEnemy);
+                int[][] currentThreats = composeMap(priority);
+
+                LinkedHashMap<Ship, Integer> fireSolution = new LinkedHashMap<>();
+                for (Map.Entry<Ship, int[][]> entry : priority.entrySet()) {
+                    Ship enemy = entry.getKey();
+                    int[][] negatedThreat = entry.getValue(); // once destroyed
+
+                    Direction moveDir = deriveMovement(this.getCoord(), enemy.getCoord());
+                    Coord moveTo = offsetCoord(this.getCoord(), moveDir);
+
+                    int threatAfterSink = currentThreats[moveTo.getX()][moveTo.getY()] - negatedThreat[moveTo.getX()][moveTo.getY()];
+
+                    fireSolution.put(enemy, threatAfterSink);
+                }
+
+                fireSolution.entrySet().stream()
+                .sorted(Map.Entry.comparingByValue().reversed())
+                .collect(Collectors.toMap(Entry::getKey, Entry::getValue));
+                // move to enemy first
+
+                for (Map.Entry<Ship, Integer> entry : fireSolution.entrySet()) {
+                    Ship enemy = entry.getKey();
+                    Coord enemyLoc = enemy.getCoord();
+                    if (this.getRemainingMoves() > 0) {
+                        Direction moveDir = deriveMovement(this.getCoord(), enemyLoc);
+                        this.move(arena, moveDir);
+                    }
+                    if (this.getRemainingShots() == 0) {
+                        break;
+                    }
+                    else {
+                        while(this.getRemainingShots() > 0 && enemy.getHealth() > 0) {
+                            this.fire(arena, enemyLoc.getX(), enemyLoc.getY());
+                        }
+                    }
+                }
+            }
+        } else {
+            // find sinkables, and safety after shooting
+            LinkedHashMap<Ship, int[][]> destroy = filterSinkable(nearbyEnemy, true);
+            if (destroy.size() == 0) {
+                // no sinkables, focus on shooting high firepower/hull ratio ships
+                LinkedHashMap<Ship, int[][]> priority = sortPriority(nearbyEnemy);
+                int[][] currentThreat = composeMap(priority);
+            }
+            else {
+                // shoot sinkables, move back
+            }
+        }
+
+
     }
     
 }
